@@ -7,7 +7,7 @@ resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.photoguestbook_vpc.id
 }
 
-resource "aws_subnet" "publuc_subnet_a" {
+resource "aws_subnet" "public_subnet_a" {
   vpc_id = aws_vpc.photoguestbook_vpc.id
   cidr_block = "10.0.1.0/24"
   availability_zone  = "eu-west-1a"
@@ -23,8 +23,8 @@ resource "aws_route" "r" {
   gateway_id = aws_internet_gateway.gw.id
 }
 
-resource "aws_route_table_association" "RTA-public" {
-  subnet_id = aws_subnet.publuc_subnet_a.id
+resource "aws_route_table_association" "rta-public" {
+  subnet_id = aws_subnet.public_subnet_a.id
   route_table_id = aws_route_table.public_rt.id
 }
 
@@ -45,7 +45,7 @@ resource "aws_security_group" "http_ssh_sg" {
     from_port = 22
     to_port = 22
     protocol = "tcp"
-    cidr_blocks = ["5.29.23.21/32"]
+    cidr_blocks = [var.my_ip]
   }
     egress {
     from_port   = 0
@@ -58,11 +58,11 @@ resource "aws_security_group" "http_ssh_sg" {
 
 # ==== S3 ==== #
 resource "aws_s3_bucket" "image_storage" {
-  bucket = "noame-photoguestbook-project-randomname"
+  bucket = var.bucket_name
 }
 
 resource "aws_s3_bucket_public_access_block" "block_public_access" {
-  bucket = "noame-photoguestbook-project-randomname"
+  bucket = aws_s3_bucket.image_storage.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
