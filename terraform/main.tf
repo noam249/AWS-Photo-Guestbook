@@ -1,6 +1,6 @@
 # ==== VPC ==== #
 resource "aws_vpc" "photoguestbook_vpc" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = var.vpc_cidr
   tags = {
     Name = "photoguestbook-vpc"
   }
@@ -13,12 +13,38 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-resource "aws_subnet" "public_subnet_a" {
-  vpc_id            = aws_vpc.photoguestbook_vpc.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "eu-west-1a"
+resource "aws_eip" "eip_ngw" {
+  for_each = aws_subnet.public_subnet
+  domain   = "vpc"
+}
+
+resource "aws_nat_gateway" "ngw" {
+  for_each      = aws_subnet.public_subnet
+  subnet_id     = each.value.id
+  allocation_id = aws_eip.eip_ngw[each.key].id
+  depends_on    = [aws_internet_gateway.igw]
   tags = {
-    Name = "photoguestbook-public-subnet-a"
+    Name = "nat_gateway-${each.key}"
+  }
+}
+
+resource "aws_subnet" "public_subnet" {
+  for_each          = var.public_subnet
+  vpc_id            = aws_vpc.photoguestbook_vpc.id
+  cidr_block        = each.value.cidr_block
+  availability_zone = each.value.availability_zone
+  tags = {
+    Name = "photoguestbook-public-subnet-${each.key}"
+  }
+}
+
+resource "aws_subnet" "private_subnet" {
+  for_each          = var.private_subnet
+  vpc_id            = aws_vpc.photoguestbook_vpc.id
+  cidr_block        = each.value.cidr_block
+  availability_zone = each.value.availability_zone
+  tags = {
+    Name = "photoguestbook-private-subnet-${each.key}"
   }
 }
 
@@ -29,35 +55,51 @@ resource "aws_route_table" "public_rt" {
   }
 }
 
-resource "aws_route" "r" {
+resource "aws_route_table" "private_rt" {
+  for_each = aws_subnet.private_subnet
+  vpc_id   = aws_vpc.photoguestbook_vpc.id
+  tags = {
+    Name = "photoguestbook-private-rt-${each.key}"
+  }
+}
+
+resource "aws_route" "r_public" {
   route_table_id         = aws_route_table.public_rt.id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.igw.id
 }
 
+resource "aws_route" "r_private" {
+  for_each               = aws_nat_gateway.ngw
+  route_table_id         = aws_route_table.private_rt[each.key].id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = each.value.id
+}
+
 resource "aws_route_table_association" "rta-public" {
-  subnet_id      = aws_subnet.public_subnet_a.id
+  for_each       = aws_subnet.public_subnet
+  subnet_id      = each.value.id
   route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table_association" "rta-private" {
+  for_each       = aws_subnet.private_subnet
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.private_rt[each.key].id
 }
 
 # ==== security ==== #
 ## temp rule, need to add the following rules:
 # interner -> ALB, ALB->EC2
-resource "aws_security_group" "http_ssh_sg" {
-  name        = "allow _http_allow_my_ssh"
-  description = "Allow HTTP from everywhere and SSH from my IP only."
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Allow HTTP from everywhere to ALB"
   vpc_id      = aws_vpc.photoguestbook_vpc.id
   ingress {
-    from_port   = 5000
-    to_port     = 5000
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.my_ip]
   }
   egress {
     from_port   = 0
@@ -65,6 +107,64 @@ resource "aws_security_group" "http_ssh_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
+
+resource "aws_security_group" "ec2_sg" {
+  name        = "ec2-sg"
+  description = "Allow HTTP from ALB to EC2"
+  vpc_id      = aws_vpc.photoguestbook_vpc.id
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "db_sg" {
+  name        = "db-sg"
+  description = "Allow access from EC2 to DB"
+  vpc_id      = aws_vpc.photoguestbook_vpc.id
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    security_groups = [aws_security_group.ec2_sg.id]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+# ==== RDS ==== #
+resource "aws_db_subnet_group" "guestbook_db_subnets" {
+  name       = "guestbook-db-subnets"
+  subnet_ids = [for s in aws_subnet.private_subnet : s.id]
+
+  tags = {
+    Name = "My DB subnet group"
+  }
+}
+
+resource "aws_db_instance" "guestbook_db" {
+  allocated_storage    = 10
+  db_name              = var.db_name
+  engine               = "postgres"
+  engine_version       = "14"
+  instance_class       = "db.t3.micro"
+  username             = var.db_user
+  password             = var.db_password
+  skip_final_snapshot  = true
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+  db_subnet_group_name = aws_db_subnet_group.guestbook_db_subnets.name
 }
 
 # ==== S3 ==== #
