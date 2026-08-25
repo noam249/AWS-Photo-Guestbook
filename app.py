@@ -54,6 +54,10 @@ def index():
     conn.close()
     return render_template('index.html', photos=photos)
 
+@app.route('/health')
+def health():
+    return {"status": "ok"}, 200
+
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'photo' not in request.files:
