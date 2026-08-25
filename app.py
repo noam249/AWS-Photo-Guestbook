@@ -17,6 +17,7 @@ DB_NAME = os.environ.get('DB_NAME', 'guestbook')
 DB_USER = os.environ.get('DB_USER')
 DB_PASSWORD = os.environ.get('DB_PASSWORD')
 AZ = os.environ.get('AZ', 'unknown')
+CLOUDFRONT_DOMAIN = os.environ.get('CLOUDFRONT_DOMAIN')
 
 # Initialize S3 client
 s3_client = boto3.client('s3', region_name=AWS_REGION)
@@ -88,7 +89,11 @@ def upload():
                 ExtraArgs={'ContentType': file.content_type}
             )
 
-            s3_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+            # If CloudFront is configured, use it for the URL. Otherwise, fallback to direct S3 URL.
+            if CLOUDFRONT_DOMAIN:
+                s3_url = f"https://{CLOUDFRONT_DOMAIN}/{s3_key}"
+            else:
+                s3_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
             conn = get_db_connection()
             cursor = conn.cursor()

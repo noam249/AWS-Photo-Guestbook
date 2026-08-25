@@ -144,10 +144,16 @@ resource "aws_security_group" "db_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+resource "aws_iam_role_policy_attachment" "ssm_access" {
+  role       = aws_iam_role.ec2_to_s3.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 # ==== RDS ==== #
 resource "aws_db_subnet_group" "guestbook_db_subnets" {
   name       = "guestbook-db-subnets"
-  subnet_ids = [for s in aws_subnet.private_subnet : s.id]
+  subnet_ids = [for subnet in aws_subnet.private_subnet : subnet.id]
 
   tags = {
     Name = "My DB subnet group"
@@ -170,14 +176,77 @@ resource "aws_db_instance" "guestbook_db" {
 # ==== S3 ==== #
 resource "aws_s3_bucket" "image_storage" {
   bucket = var.bucket_name
+  force_destroy = true
 }
 
-resource "aws_s3_bucket_public_access_block" "block_public_access" {
-  bucket                  = aws_s3_bucket.image_storage.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+resource "aws_s3_bucket_policy" "cloudfront_oac_policy" {
+  bucket = aws_s3_bucket.image_storage.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontServicePrincipalReadOnly"
+        Effect    = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.image_storage.arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.cdn.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_cloudfront_origin_access_control" "oac" {
+  name                              = "guestbook-oac"
+  description                       = "OAC for Guestbook Photos"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "cdn" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  
+  origin {
+    domain_name              = aws_s3_bucket.image_storage.bucket_regional_domain_name
+    origin_id                = "S3-GuestbookPhotos"
+    origin_access_control_id = aws_cloudfront_origin_access_control.oac.id
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-GuestbookPhotos"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
 }
 
 # ==== IAM ==== #
@@ -236,18 +305,26 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 # === EC2 === #
 
-resource "aws_instance" "server" {
+resource "aws_launch_template" "guestbook_lt" {
+  name = "guestbook_template"
   instance_type               = "t3.micro"
-  ami                         = data.aws_ami.ubuntu.id
-  subnet_id                   = aws_subnet.public_subnet_a.id
-  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
-  vpc_security_group_ids      = [aws_security_group.http_ssh_sg.id]
-  associate_public_ip_address = true
-  key_name                    = aws_key_pair.ssh_key.key_name
-  tags = {
-    Name = "guestbook-server"
+  image_id                         = data.aws_ami.ubuntu.id
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
   }
+  vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
+  key_name                    = aws_key_pair.ssh_key.key_name
+  user_data = base64encode(templatefile("userdata.sh", {
+    s3_bucket   = var.bucket_name
+    db_host     = aws_db_instance.guestbook_db.address
+    db_name     = var.db_name
+    db_user     = var.db_user
+    db_password = var.db_password
+    region      = var.region
+    cloudfront_domain = aws_cloudfront_distribution.cdn.domain_name
+  }))
 }
+
 
 data "aws_ami" "ubuntu" {
   region      = var.region
@@ -262,4 +339,79 @@ data "aws_ami" "ubuntu" {
 resource "aws_key_pair" "ssh_key" {
   key_name   = "guestbook-key"
   public_key = file(var.ssh_key_file)
+}
+
+# ==== ALB === #
+
+resource "aws_lb" "alb" {
+  name               = "photoguestbook-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [for subnet in aws_subnet.public_subnet : subnet.id]
+}
+
+resource "aws_lb_target_group" "alb_tg" {
+  name     = "guestbook-forward-http-traffic"
+  port     = 5000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.photoguestbook_vpc.id
+
+  target_health_state {
+    enable_unhealthy_connection_termination = false
+  }
+
+  health_check {
+    healthy_threshold = 2
+    interval = 30
+    path = "/health"
+    port = 5000
+    protocol = "HTTP"
+  }
+}
+
+resource "aws_lb_listener" "alb_listener" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+    default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.alb_tg.arn
+  }
+}
+
+# ==== ASG ==== #
+
+resource "aws_autoscaling_group" "asg" {
+  name                      = "guestbook-asg"
+  max_size                  = 4
+  min_size                  = 2
+  desired_capacity = 2
+  vpc_zone_identifier  = [for subnet in aws_subnet.private_subnet : subnet.id]
+  target_group_arns = [aws_lb_target_group.alb_tg.arn]
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+  launch_template {
+    id      = aws_launch_template.guestbook_lt.id
+    version = "$Latest"
+  }
+  }
+
+
+  # === OUTPUT === #
+
+  output "alb_dns_name" {
+  description = "URL to access the Guestbook application"
+  value       = aws_lb.alb.dns_name
+}
+
+output "rds_endpoint" {
+  description = "RDS instance endpoint for manual DB access"
+  value       = aws_db_instance.guestbook_db.address
+}
+
+output "bucket_name" {
+  description = "S3 bucket name for image storage"
+  value       = aws_s3_bucket.image_storage.id
 }
