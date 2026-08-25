@@ -16,6 +16,7 @@ DB_HOST = os.environ.get('DB_HOST')
 DB_NAME = os.environ.get('DB_NAME', 'guestbook')
 DB_USER = os.environ.get('DB_USER')
 DB_PASSWORD = os.environ.get('DB_PASSWORD')
+AZ = os.environ.get('AZ', 'unknown')
 
 # Initialize S3 client
 s3_client = boto3.client('s3', region_name=AWS_REGION)
@@ -52,7 +53,7 @@ def index():
     photos = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template('index.html', photos=photos)
+    return render_template('index.html', photos=photos, az=AZ)
 
 @app.route('/health')
 def health():

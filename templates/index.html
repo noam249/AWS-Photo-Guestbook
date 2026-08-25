@@ -96,6 +96,8 @@
 <body>
     <h1>Photo Guestbook</h1>
 
+    <p style="text-align:center; color:#666; font-size:14px;">Served from: {{ az }}</p>
+
     {% with messages = get_flashed_messages() %}
         {% if messages %}
             {% for message in messages %}
