@@ -52,6 +52,11 @@ The application exposes the Availability Zone of the instance serving each reque
 
 The load balancer's health check hits a dedicated `/health` endpoint that does **not** touch the database — it only confirms the process itself is alive and listening. This is intentional: coupling the health check to the database would mean a single RDS blip (failover, brief unavailability) could cause the ALB to mark every instance unhealthy at once, since they all depend on the same database.
 
+<img width="1130" height="796" alt="guestbook-1a" src="https://github.com/user-attachments/assets/18497ff9-4dcb-4f95-a97b-fa68d41c8a84" />  <img width="1125" height="801" alt="guestbook-1b" src="https://github.com/user-attachments/assets/0ad68686-67bb-48c8-b9ad-249d5b3484f7" /> 
+
+
+
+
 ## Design Decisions Worth Noting
 
 A few choices made along the way, and why:
