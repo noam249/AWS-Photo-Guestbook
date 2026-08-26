@@ -10,6 +10,9 @@ The infrastructure is designed for Fault Tolerance and High Availability (HA), s
 
 **Traffic flow:** Internet → Internet Gateway → Application Load Balancer (public subnets) → Auto Scaling Group targets (private subnets) → RDS / S3.
 
+<img width="1247" height="919" alt="Diagram" src="https://github.com/user-attachments/assets/e90e552d-464e-43c3-89c6-60bd4196f4b3" />
+
+
 ## Technical Stack
 
 - **Compute:** Amazon EC2 (`t3.micro`) managed by an Auto Scaling Group (ASG), min 2 / max 4 instances
