@@ -7,9 +7,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "remote-s3-backend-noam"
-    region = "eu-west-1"
-    key = "photo-guestbook/terraform.tfstate"
+    bucket       = "remote-s3-backend-noam"
+    region       = "eu-west-1"
+    key          = "photo-guestbook/terraform.tfstate"
     use_lockfile = true
   }
 }

@@ -114,9 +114,9 @@ resource "aws_security_group" "ec2_sg" {
   description = "Allow HTTP from ALB to EC2"
   vpc_id      = aws_vpc.photoguestbook_vpc.id
   ingress {
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
+    from_port       = 5000
+    to_port         = 5000
+    protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
   }
   egress {
@@ -132,9 +132,9 @@ resource "aws_security_group" "db_sg" {
   description = "Allow access from EC2 to DB"
   vpc_id      = aws_vpc.photoguestbook_vpc.id
   ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
     security_groups = [aws_security_group.ec2_sg.id]
   }
   egress {
@@ -161,21 +161,21 @@ resource "aws_db_subnet_group" "guestbook_db_subnets" {
 }
 
 resource "aws_db_instance" "guestbook_db" {
-  allocated_storage    = 10
-  db_name              = var.db_name
-  engine               = "postgres"
-  engine_version       = "14"
-  instance_class       = "db.t3.micro"
-  username             = var.db_user
-  password             = var.db_password
-  skip_final_snapshot  = true
+  allocated_storage      = 10
+  db_name                = var.db_name
+  engine                 = "postgres"
+  engine_version         = "14"
+  instance_class         = "db.t3.micro"
+  username               = var.db_user
+  password               = var.db_password
+  skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.db_sg.id]
-  db_subnet_group_name = aws_db_subnet_group.guestbook_db_subnets.name
+  db_subnet_group_name   = aws_db_subnet_group.guestbook_db_subnets.name
 }
 
 # ==== S3 ==== #
 resource "aws_s3_bucket" "image_storage" {
-  bucket = var.bucket_name
+  bucket        = var.bucket_name
   force_destroy = true
 }
 
@@ -186,8 +186,8 @@ resource "aws_s3_bucket_policy" "cloudfront_oac_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "AllowCloudFrontServicePrincipalReadOnly"
-        Effect    = "Allow"
+        Sid    = "AllowCloudFrontServicePrincipalReadOnly"
+        Effect = "Allow"
         Principal = {
           Service = "cloudfront.amazonaws.com"
         }
@@ -212,9 +212,9 @@ resource "aws_cloudfront_origin_access_control" "oac" {
 }
 
 resource "aws_cloudfront_distribution" "cdn" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  
+  enabled         = true
+  is_ipv6_enabled = true
+
   origin {
     domain_name              = aws_s3_bucket.image_storage.bucket_regional_domain_name
     origin_id                = "S3-GuestbookPhotos"
@@ -306,21 +306,21 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 # === EC2 === #
 
 resource "aws_launch_template" "guestbook_lt" {
-  name = "guestbook_template"
-  instance_type               = "t3.micro"
-  image_id                         = data.aws_ami.ubuntu.id
+  name          = "guestbook_template"
+  instance_type = "t3.micro"
+  image_id      = data.aws_ami.ubuntu.id
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
-  vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
-  key_name                    = aws_key_pair.ssh_key.key_name
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+  key_name               = aws_key_pair.ssh_key.key_name
   user_data = base64encode(templatefile("userdata.sh", {
-    s3_bucket   = var.bucket_name
-    db_host     = aws_db_instance.guestbook_db.address
-    db_name     = var.db_name
-    db_user     = var.db_user
-    db_password = var.db_password
-    region      = var.region
+    s3_bucket         = var.bucket_name
+    db_host           = aws_db_instance.guestbook_db.address
+    db_name           = var.db_name
+    db_user           = var.db_user
+    db_password       = var.db_password
+    region            = var.region
     cloudfront_domain = aws_cloudfront_distribution.cdn.domain_name
   }))
 }
@@ -363,10 +363,10 @@ resource "aws_lb_target_group" "alb_tg" {
 
   health_check {
     healthy_threshold = 2
-    interval = 30
-    path = "/health"
-    port = 5000
-    protocol = "HTTP"
+    interval          = 30
+    path              = "/health"
+    port              = 5000
+    protocol          = "HTTP"
   }
 }
 
@@ -375,7 +375,7 @@ resource "aws_lb_listener" "alb_listener" {
   port              = "80"
   protocol          = "HTTP"
 
-    default_action {
+  default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.alb_tg.arn
   }
@@ -387,21 +387,21 @@ resource "aws_autoscaling_group" "asg" {
   name                      = "guestbook-asg"
   max_size                  = 4
   min_size                  = 2
-  desired_capacity = 2
-  vpc_zone_identifier  = [for subnet in aws_subnet.private_subnet : subnet.id]
-  target_group_arns = [aws_lb_target_group.alb_tg.arn]
+  desired_capacity          = 2
+  vpc_zone_identifier       = [for subnet in aws_subnet.private_subnet : subnet.id]
+  target_group_arns         = [aws_lb_target_group.alb_tg.arn]
   health_check_type         = "ELB"
   health_check_grace_period = 300
   launch_template {
     id      = aws_launch_template.guestbook_lt.id
     version = "$Latest"
   }
-  }
+}
 
 
-  # === OUTPUT === #
+# === OUTPUT === #
 
-  output "alb_dns_name" {
+output "alb_dns_name" {
   description = "URL to access the Guestbook application"
   value       = aws_lb.alb.dns_name
 }
