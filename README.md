@@ -22,6 +22,7 @@ The infrastructure is designed for Fault Tolerance and High Availability (HA), s
 - **Security:** IAM Roles scoped to least privilege, Security Group chaining, Private Subnet isolation, SSM Session Manager for shell access (no SSH keys exposed, no bastion host)
 - **Infrastructure as Code:** 100% Terraform — VPC, networking, compute, database, and IAM are all defined in code and reproducible with `terraform apply` / `terraform destroy`
 - **Containerization:** Flask application packaged as a multi-stage Docker image, run via a `user_data` bootstrap script on each ASG instance
+- **Remote State:** Terraform state stored in S3 with native S3 locking
 
 ## Infrastructure Details
 
@@ -82,5 +83,5 @@ A few choices made along the way, and why:
 
 - **CI/CD:** GitHub Actions pipeline — build and test the Docker image, push to a registry, then trigger `terraform apply` to roll out a new Launch Template version through the ASG
 - **Orchestration:** Move the containerized app from EC2/ASG onto Kubernetes (starting locally with `kind`/`minikube`)
-- **Remote state:** Migrate Terraform state to an S3 backend with DynamoDB locking
+- **~~Remote state:** Migrate Terraform state to an S3 backend with DynamoDB locking~~
 - **Modules:** Refactor the repeated per-AZ networking pattern (subnet + NAT + route table) into a reusable Terraform module
