@@ -16,14 +16,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: build image
-        run: docker build -t my-test-app:latest .
-
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
           aws-region: eu-west-1
 
-      - name: Test AWS Cred
-        run: aws sts get-caller-identity
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: build, tag and push image to ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: guestbook
+          IMAGE_TAG: ${{ github.sha }}
+        run: | 
+          docker build -t $REGISTRY/$REPOSITRY:$IMAGE_TAG .
+          docker tag $REGISTRY/$REPOSITORY:$IMAGE_TAG $REGISTRY/$REPOSITORY:latest
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$REPOSITORY:latest
