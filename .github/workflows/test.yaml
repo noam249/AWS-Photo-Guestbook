@@ -20,7 +20,6 @@ jobs:
         run: docker build -t my-test-app:latest .
 
       - name: Configure AWS credentials via OIDC
-
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
