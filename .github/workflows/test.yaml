@@ -1,0 +1,29 @@
+name: OIDC TEST
+
+on:
+  push:
+    branches: [aws-oidc-test]
+
+permissions:
+  id-token: write  
+  contents: read
+
+jobs:
+  oidc-test:
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: build image
+        run: docker build -t my-test-app:latest .
+
+      - name: Configure AWS credentials via OIDC
+
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
+          aws-region: us-west-1
+
+      - name: Test AWS Cred
+        run: aws sts get-caller-identity
