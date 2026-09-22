@@ -6,7 +6,7 @@ on:
       - aws-oidc-test
 
 permissions:
-  id-token: write  
+  id-token: write
   contents: read
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
-          aws-region: us-west-1
+          aws-region: eu-west-1
 
       - name: Test AWS Cred
         run: aws sts get-caller-identity
