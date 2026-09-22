@@ -1,6 +1,9 @@
 name: OIDC TEST
 
-on: [push]
+on:
+  push:
+    branches:
+      - aws-oidc-test
 
 permissions:
   id-token: write
