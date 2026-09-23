@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+import os
+import uuid
+
 import boto3
 import psycopg2
-import os
-from datetime import datetime
+from botocore.exceptions import BotoCoreError, ClientError
+from flask import Flask, flash, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
-import uuid
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -107,8 +108,8 @@ def upload():
             conn.close()
 
             flash("Photo uploaded successfully!")
-        except Exception as e:
-            flash(f"Error uploading photo: {str(e)}")
+        except (BotoCoreError, ClientError, psycopg2.Error) as e:
+            flash(f"Error uploading photo: {e!s}")
 
     return redirect(url_for("index"))
 
