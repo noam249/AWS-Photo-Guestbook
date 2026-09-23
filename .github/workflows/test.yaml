@@ -26,10 +26,10 @@ jobs:
         run: pip install ruff
       
       - name: Check code formatting
-        run: ruff format --check /app
+        run: ruff format --check app/
 
       - name: Lint code
-        run: ruff --check /app
+        run: ruff --check app/
 
       - name: build, tag and push image to ECR
         env:
