@@ -3,7 +3,7 @@ name: CI-Terraform-Workflow
 on:
   push:
     branches:
-      - terraform-ci
+      - main
     paths:
       - 'terraform/**'
       - '.github/workflows/terraform-ci.yaml'
