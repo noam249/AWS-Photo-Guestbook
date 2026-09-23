@@ -26,7 +26,7 @@ jobs:
         run: pip install ruff
       
       - name: Check code formatting
-        run: ruff formay --check /app
+        run: ruff format --check /app
 
       - name: Lint code
         run: ruff --check /app
