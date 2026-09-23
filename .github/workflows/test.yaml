@@ -21,20 +21,15 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
           aws-region: eu-west-1
-
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up python env - for flake8-lint
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
       
-      - name: flake8 Lint
-        uses: py-actions/flake8@v2
-        with:
-          path: app/
+      - name: Install Ruff
+        run: pip install ruff
+      
+      - name: Check code formatting
+        run: ruff formay --check /app
+
+      - name: Lint code
+        run: ruff --check /app
 
       - name: build, tag and push image to ECR
         env:
