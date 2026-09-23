@@ -15,12 +15,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
-          aws-region: eu-west-1
       
       - name: Install Ruff
         run: pip install ruff
@@ -30,6 +24,12 @@ jobs:
 
       - name: Lint code
         run: ruff check app/
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE }}
+          aws-region: eu-west-1      
 
       - name: build, tag and push image to ECR
         env:
