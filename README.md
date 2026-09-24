@@ -23,6 +23,8 @@ The infrastructure is designed for Fault Tolerance and High Availability (HA), s
 - **Infrastructure as Code:** 100% Terraform — VPC, networking, compute, database, and IAM are all defined in code and reproducible with `terraform apply` / `terraform destroy`
 - **Containerization:** Flask application packaged as a multi-stage Docker image, run via a `user_data` bootstrap script on each ASG instance
 - **Remote State:** Terraform state stored in S3 with native S3 locking
+- **CI/CD:** Automated dual GitHub Actions workflows using OpenID Connect (OIDC) authentication for keyless, secure AWS access, featuring automated Python linting/formatting via Ruff,
+container build/push to Amazon ECR, and automated Terraform validation
 
 ## Infrastructure Details
 
@@ -58,7 +60,15 @@ The load balancer's health check hits a dedicated `/health` endpoint that does *
 
 <img width="1130" height="796" alt="guestbook-1a" src="https://github.com/user-attachments/assets/18497ff9-4dcb-4f95-a97b-fa68d41c8a84" />  <img width="1125" height="801" alt="guestbook-1b" src="https://github.com/user-attachments/assets/0ad68686-67bb-48c8-b9ad-249d5b3484f7" /> 
 
+## CI/CD Pipeline
 
+The project utilizes two decoupled GitHub Actions workflows separated by change detection (`paths`), ensuring that application code updates and infrastructure modifications run independent validation checks without triggering redundant pipelines.
+
+### Key Features
+- **Keyless AWS Authentication (OIDC):** Uses OpenID Connect (`token.actions.githubusercontent.com`) to assume a scoped IAM role dynamically via AWS STS. No long-lived `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` credentials are stored in GitHub Secrets.
+- **Path-Based Triggering:**
+  - `app/**` changes trigger the application build and container publishing pipeline.
+  - `terraform/**` changes trigger the infrastructure linting and validation pipeline.
 
 
 ## Design Decisions Worth Noting
@@ -71,6 +81,10 @@ A few choices made along the way, and why:
 - **RDS provisioned single-AZ first, Multi-AZ as a later step** — Multi-AZ failover setup takes 10–20 minutes to create or tear down, which is a lot of friction while still debugging basic Terraform syntax. Validating the full pipeline on a cheaper, faster-to-iterate config first, then upgrading, saved a lot of wasted waiting time during development.
 - **Health check leaves the database out on purposee** — see *Proof of Concept* above.
 - **`terraform destroy` after every work session** — this stack costs real money if left running (2× NAT Gateway, RDS, ALB, 2× EC2), so the infrastructure is treated as fully ephemeral during development rather than left running between sessions.
+- **OIDC over static IAM user access keys for CI/CD:** Eliminates long-lived AWS secrets in repository settings, mitigating credential leak risks by using ephemeral tokens scoped strictly to the repository and branch.
+- **Decoupled pipelines via path filters (`paths`):** Updating a Python route shouldn't re-validate Terraform files, and updating infrastructure shouldn't rebuild or push duplicate Docker images to ECR.
+
+
 
 ## Notable Issues Hit During the Build
 
@@ -78,10 +92,13 @@ A few choices made along the way, and why:
 - **IAM trust policy vs. permissions policy confusion** — early on, the S3 permissions JSON was mistakenly placed in `assume_role_policy` (which only defines *who* can assume the role) instead of a separate permissions policy (which defines *what* the role can do). Also hit a circular dependency trying to have the role and its policy reference each other.
 - **`s3:ListBucket` vs. `s3:GetObject`/`s3:PutObject` require different ARN shapes** — the former acts on the bucket itself (`arn:aws:s3:::bucket-name`), the latter on objects inside it (`arn:aws:s3:::bucket-name/*`).
 - **SSM connection failing on already-running instances** — the IAM policy attachment doesn't retroactively help an instance whose agent already failed to register at boot. Fixed by forcing the ASG to cycle the instance rather than waiting.
+- **Docker image tag formatting errors:** The image push step failed initially with `invalid reference format` due to missing step outputs (`login-ecr`) causing empty registry environment variables. Resolved by assigning explicit step IDs and validating dynamic output mapping.
+- **Ruff `BLE001` blind exception handling:** Ruff blocked commits due to catch-all `except Exception` blocks in the S3 upload handler. Resolved by replacing generic handlers with explicit, typed exceptions (`BotoCoreError`, `ClientError`, `psycopg2.Error`).
 
 ## Future Roadmap
 
-- **CI/CD:** GitHub Actions pipeline — build and test the Docker image, push to a registry, then trigger `terraform apply` to roll out a new Launch Template version through the ASG
+- **~~CI Automation:~~** ~~GitHub Actions workflows with keyless AWS OIDC authentication — lint and format Python code with Ruff, validate Terraform syntax/formatting, and build, tag, and push Docker images to Amazon ECR~~
+- **CD Automation:** Automate rolling deployments by triggering `terraform apply` or ASG Instance Refresh to roll out updated Launch Template versions with new image tags
 - **Orchestration:** Move the containerized app from EC2/ASG onto Kubernetes (starting locally with `kind`/`minikube`)
 - **~~Remote state:** Migrate Terraform state to an S3 backend with DynamoDB locking~~
 - **Modules:** Refactor the repeated per-AZ networking pattern (subnet + NAT + route table) into a reusable Terraform module
